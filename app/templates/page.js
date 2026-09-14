@@ -8,7 +8,15 @@ import { ArrowLeft, ImagePlus, Loader2, Pencil, Plus, Save, Sparkles, Trash2, X 
 import { suggestKeywords } from '@/lib/posters/activities';
 import TemplateEditor from '@/components/TemplateEditor';
 import { ToastStack, useToasts } from '@/components/Toast';
-import { ASPECT_RATIO, PAGE_FORMAT, POSTER_HEIGHT, POSTER_WIDTH, defaultLayout } from '@/lib/templates';
+import {
+  ASPECT_RATIO,
+  PAGE_FORMAT,
+  POSTER_HEIGHT,
+  POSTER_WIDTH,
+  STORED_HEIGHT,
+  STORED_WIDTH,
+  defaultLayout,
+} from '@/lib/templates';
 import { formatBytes, normaliseTemplateImage } from '@/lib/imageResize';
 
 async function sendJson(url, body, method = 'POST') {
@@ -70,11 +78,26 @@ export default function TemplatesPage() {
     try {
       const image = await normaliseTemplateImage(file);
 
-      if (image.croppedPercent >= 8) {
+      // Say plainly whether the design survived untouched, because that is the
+      // whole promise of a template: the printed poster is your artwork, with
+      // only the event details drawn on top.
+      if (image.untouched) {
+        push(
+          'success',
+          `Stored exactly as supplied — ${image.sourceWidth} × ${image.sourceHeight}, ` +
+            'not cropped, resized or re-encoded.',
+        );
+      } else if (image.croppedPercent >= 2) {
         push(
           'warning',
           `That image is not ${PAGE_FORMAT}-shaped, so about ${image.croppedPercent}% was cropped to fit. ` +
-            `For an exact fit, export at ${PAGE_FORMAT} (or any ${POSTER_WIDTH} × ${POSTER_HEIGHT} ratio).`,
+            `For an exact match, export at ${PAGE_FORMAT} (297 × 420 mm, or any ${POSTER_WIDTH} × ${POSTER_HEIGHT} ratio).`,
+        );
+      } else {
+        push(
+          'info',
+          `Resized to ${STORED_WIDTH} × ${STORED_HEIGHT} to keep the file manageable. ` +
+            'Export at A3 under 8 MB and it will be stored exactly as-is instead.',
         );
       }
 

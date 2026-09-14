@@ -83,7 +83,7 @@ export function PosterThumbnail({ poster, label, onOpen, onDownload }) {
             v{poster.variationNumber} · {poster.colorScheme}
           </p>
           <p className="text-xs text-gray-500">
-            {poster.source === 'ai' ? 'AI generated' : 'Template'}
+            {{ custom: 'Your design', ai: 'AI generated' }[poster.source] ?? 'Built-in design'}
           </p>
         </div>
         <button

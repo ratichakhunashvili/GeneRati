@@ -13,10 +13,10 @@ import { defaultLayout, sanitizeKeywords, sanitizeLayout, sanitizeName } from '@
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-// The client downscales to twice A4 and re-encodes before sending, so a normal
-// template lands well under this. The cap is here to reject something that
-// slipped past that, before it reaches Drive.
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+// A well-prepared upload is stored exactly as supplied rather than re-encoded,
+// so this has to allow a real print-resolution design through. Anything larger
+// was resized by the browser before it got here.
+const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
 const MAX_TEMPLATES = 60;
 
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp'];

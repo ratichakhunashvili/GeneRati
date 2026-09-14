@@ -13,7 +13,7 @@ export const maxDuration = 60;
 // A built-in poster is ~10KB, but one built from a user template embeds its
 // background image as base64 and runs to a couple of megabytes. This has to
 // clear that comfortably while still refusing anything absurd.
-const MAX_FILE_BYTES = 12 * 1024 * 1024;
+const MAX_FILE_BYTES = 24 * 1024 * 1024;
 
 export async function POST(request) {
   const { session, error: authError } = await requireSession();

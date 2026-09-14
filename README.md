@@ -93,13 +93,29 @@ In your Google Drive, in a **Poster Templates** folder next to your activities.
 Nothing is stored on any server: your designs stay in your own Drive, which
 keeps the whole thing free and means they follow you to any machine.
 
-Uploaded images are resized to 1685 × 2381 (1.5× A3, ~144dpi, which is plenty
-for something read from across a room) and re-encoded in your browser before
-upload, targeting about 1.5 MB. A finished poster with the background embedded
-is roughly 2 MB.
+### Your design is reproduced exactly
 
-> Non-A3 images are centre-cropped to fit, and the app warns you how much was
-> trimmed. For an exact fit, export at A3 or any 1123 × 1587 ratio.
+A template poster **is** your image. The app draws the title, date, time,
+location and QR on top of it and changes nothing else — it does not restyle,
+recolour or regenerate your artwork.
+
+To keep that literally true, an upload that is already the right shape is
+stored **byte-for-byte as you supplied it**: no crop, no resample, no
+re-encoding. That applies when the file is
+
+- PNG, JPEG or WebP, and
+- within 1% of the A3 ratio (1123 × 1587, i.e. 297 × 420 mm), and
+- at least 1123px wide, and
+- 8 MB or smaller.
+
+The app tells you which happened. Upload a correct A3 export and you get
+*"Stored exactly as supplied"*.
+
+Anything else is centre-cropped to A3 and resized to 2246 × 3174 (~192dpi),
+and the app says how much was trimmed. Re-encoding tries PNG first, because it
+is lossless and compresses flat poster artwork well; it only falls back to JPEG
+if the file would be too large, and never below quality 0.85 — below that, flat
+colour areas band and hard edges ring visibly on a printed A3 sheet.
 
 ---
 

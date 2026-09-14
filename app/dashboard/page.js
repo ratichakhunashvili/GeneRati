@@ -56,17 +56,33 @@ async function sendJson(url, body, method = 'POST') {
  */
 function resolvePosterMode(activity, templates) {
   const choice = activity.templateId ?? 'auto';
-  if (choice === 'builtin' || templates.length === 0) return { mode: 'builtin' };
+
+  if (choice === 'builtin') return { mode: 'builtin' };
+  if (templates.length === 0) return { mode: 'builtin' };
 
   if (choice === 'auto') {
     const match = matchTemplate(templates, activity.title);
-    return match ? { mode: 'custom', templateId: match.id } : { mode: 'builtin' };
+    return match
+      ? { mode: 'custom', templateId: match.id }
+      : // Falling back is right, but doing it silently is not: the poster comes
+        // back looking nothing like the user's design with no explanation.
+        { mode: 'builtin', fellBackFrom: 'no-keyword-match' };
   }
 
-  // An explicitly chosen template that has since been deleted.
   const exists = templates.some((template) => template.id === choice);
-  return exists ? { mode: 'custom', templateId: choice } : { mode: 'builtin' };
+  return exists
+    ? { mode: 'custom', templateId: choice }
+    : { mode: 'builtin', fellBackFrom: 'template-deleted' };
 }
+
+/** Explain a fallback so it never looks like the app ignored the choice. */
+const FALLBACK_MESSAGE = {
+  'no-keyword-match':
+    'None of your templates has a keyword matching this title, so the built-in designs were used. ' +
+    'Add a matching keyword on the Templates page, or pick a template directly when creating the activity.',
+  'template-deleted':
+    'The template chosen for this activity no longer exists, so the built-in designs were used.',
+};
 
 /** Build the QR payload: the form once it exists, otherwise the event details. */
 async function buildQrCode(activity) {
@@ -315,8 +331,10 @@ export default function DashboardPage() {
       setActivityBusy(activity.id, requestedMode);
       try {
         const qrCodeUrl = await buildQrCode(activity);
-        const selection =
+        const { fellBackFrom, ...selection } =
           requestedMode === 'ai' ? { mode: 'ai' } : resolvePosterMode(activity, templates);
+
+        if (fellBackFrom) push('warning', FALLBACK_MESSAGE[fellBackFrom]);
 
         const data = await sendJson('/api/generate-posters', {
           activity,
@@ -401,10 +419,12 @@ export default function DashboardPage() {
         // against this form: regenerating those would charge the Anthropic
         // account again for an identical result.
         const withForm = { ...activity, formLink };
-        const selection =
+        const { fellBackFrom, ...selection } =
           activity.posterSource === 'ai'
             ? { mode: 'ai' }
             : resolvePosterMode(withForm, templates);
+
+        if (fellBackFrom) push('warning', FALLBACK_MESSAGE[fellBackFrom]);
         let generated;
 
         if (selection.mode === 'ai' && postersAlreadyCorrect) {
