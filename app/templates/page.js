@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { ArrowLeft, ImagePlus, Loader2, Pencil, Save, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Loader2, Pencil, Plus, Save, Sparkles, Trash2, X } from 'lucide-react';
+import { suggestKeywords } from '@/lib/posters/activities';
 import TemplateEditor from '@/components/TemplateEditor';
 import { ToastStack, useToasts } from '@/components/Toast';
 import { ASPECT_RATIO, PAGE_FORMAT, POSTER_HEIGHT, POSTER_WIDTH, defaultLayout } from '@/lib/templates';
@@ -155,6 +156,24 @@ export default function TemplatesPage() {
     }
   };
 
+  // Keywords the template name implies but does not yet carry. The valuable
+  // part is cross-language: an English name contributes the Georgian spellings
+  // and vice versa, so one template matches titles written either way.
+  const currentKeywords = (draft?.keywords ?? '')
+    .split(',')
+    .map((word) => word.trim().toLowerCase())
+    .filter(Boolean);
+  const suggestions = draft
+    ? suggestKeywords(draft.name).filter((word) => !currentKeywords.includes(word))
+    : [];
+
+  const addKeywords = (words) => {
+    setDraft((current) => ({
+      ...current,
+      keywords: [...currentKeywords, ...words].join(', '),
+    }));
+  };
+
   if (status === 'loading' || (status === 'authenticated' && loading)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -243,6 +262,35 @@ export default function TemplatesPage() {
                 <p className="mt-1 text-xs text-gray-500">
                   When an activity title contains one of these, this template is preselected.
                 </p>
+
+                {suggestions.length > 0 && (
+                  <div className="mt-2 rounded-lg bg-blue-50 p-2.5">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-900">
+                        <Sparkles size={13} aria-hidden="true" /> Suggested from the name
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => addKeywords(suggestions)}
+                        className="text-xs font-bold text-blue-700 underline hover:text-blue-900"
+                      >
+                        Add all
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestions.map((word) => (
+                        <button
+                          key={word}
+                          type="button"
+                          onClick={() => addKeywords([word])}
+                          className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-blue-800 ring-1 ring-blue-200 transition hover:bg-blue-100"
+                        >
+                          <Plus size={11} aria-hidden="true" /> {word}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
