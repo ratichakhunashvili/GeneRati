@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { readJson, requireSession, validateActivity } from '@/lib/api';
 import { getActivityKind } from '@/lib/posters/activities';
 import { buildTemplatePosters } from '@/lib/posters/templates';
+import { buildPosterFromTemplate } from '@/lib/posters/fromTemplate';
+import { driveClient, googleErrorMessage, readTemplateImage, readTemplateIndex } from '@/lib/google';
+import { matchTemplate } from '@/lib/templates';
 
 // Vercel's free Hobby plan caps a function at 60s. The template path returns in
 // milliseconds; only the optional AI path comes close to this.
@@ -152,13 +155,13 @@ async function generateOne(client, activity, kind, style, qrCodeUrl) {
 }
 
 export async function POST(request) {
-  const { error: authError } = await requireSession();
+  const { session, error: authError } = await requireSession();
   if (authError) return authError;
 
   const { body, error: bodyError } = await readJson(request);
   if (bodyError) return bodyError;
 
-  const { activity, qrCodeUrl, mode = 'template' } = body ?? {};
+  const { activity, qrCodeUrl, mode = 'builtin', templateId } = body ?? {};
 
   const invalid = validateActivity(activity);
   if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
@@ -166,12 +169,60 @@ export async function POST(request) {
   const qr = safeQrCodeUrl(qrCodeUrl);
   const kind = getActivityKind(activity.title);
 
-  // Default path: rendered locally, instantly, at no cost.
+  // A poster built from one of the user's own uploaded designs.
+  if (mode === 'custom') {
+    try {
+      const drive = driveClient(session.accessToken);
+      const { templates } = await readTemplateIndex(drive);
+
+      // An explicit choice wins; "auto" falls back to keyword matching.
+      const template =
+        (templateId && templateId !== 'auto'
+          ? templates.find((t) => t.id === templateId)
+          : matchTemplate(templates, activity.title)) ?? null;
+
+      if (!template) {
+        return NextResponse.json(
+          {
+            error:
+              templateId && templateId !== 'auto'
+                ? 'That template no longer exists. Pick another one.'
+                : 'No template matches this activity yet. Choose one, or add a template with a matching keyword.',
+            code: 'TEMPLATE_NOT_FOUND',
+          },
+          { status: 404 },
+        );
+      }
+
+      const imageDataUri = await readTemplateImage(drive, template.fileId);
+      const html = buildPosterFromTemplate({ activity, template, imageDataUri, qrCodeUrl: qr });
+
+      return NextResponse.json({
+        posters: [
+          {
+            html,
+            colorScheme: template.name,
+            variationNumber: 1,
+            source: 'custom',
+            templateId: template.id,
+          },
+        ],
+        failedCount: 0,
+        mode: 'custom',
+        activityKind: kind.label,
+      });
+    } catch (err) {
+      console.error('[generate-posters] Template render failed:', err);
+      return NextResponse.json({ error: googleErrorMessage(err) }, { status: 500 });
+    }
+  }
+
+  // Default path: the built-in designs, rendered locally and instantly.
   if (mode !== 'ai') {
     return NextResponse.json({
       posters: buildTemplatePosters(activity, qr),
       failedCount: 0,
-      mode: 'template',
+      mode: 'builtin',
       activityKind: kind.label,
     });
   }

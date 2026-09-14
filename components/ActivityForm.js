@@ -1,8 +1,10 @@
 'use client';
 
 import { useId, useState } from 'react';
+import Link from 'next/link';
 import { AlertTriangle, Plus } from 'lucide-react';
 import { isPastDate } from '@/lib/format';
+import { matchTemplate } from '@/lib/templates';
 
 const EMPTY = { title: '', date: '', time: '', location: '' };
 
@@ -13,10 +15,12 @@ const FIELDS = [
   { name: 'location', label: 'Location', type: 'text', placeholder: 'e.g. Main Stadium' },
 ];
 
-export default function ActivityForm({ onAdd }) {
+export default function ActivityForm({ onAdd, templates = [] }) {
   const fieldId = useId();
   const [values, setValues] = useState(EMPTY);
   const [errors, setErrors] = useState({});
+  // 'auto' matches a template by keyword; 'builtin' uses the generated designs.
+  const [templateId, setTemplateId] = useState('auto');
 
   const update = (name, value) => {
     setValues((current) => ({ ...current, [name]: value }));
@@ -41,12 +45,16 @@ export default function ActivityForm({ onAdd }) {
       date: values.date,
       time: values.time,
       location: values.location.trim(),
+      templateId: templates.length > 0 ? templateId : 'builtin',
     });
     setValues(EMPTY);
     setErrors({});
   };
 
   const showPastWarning = values.date && isPastDate(values.date);
+  // Show which template "Auto" would actually land on, so the choice is visible
+  // before the activity is created rather than a surprise at generation time.
+  const autoMatch = templateId === 'auto' ? matchTemplate(templates, values.title) : null;
 
   return (
     // noValidate so our own messages show instead of the browser's, which are
@@ -83,6 +91,49 @@ export default function ActivityForm({ onAdd }) {
           </div>
         );
       })}
+
+      <div>
+        <label htmlFor={`${fieldId}-template`} className="mb-1.5 block text-sm font-medium text-gray-700">
+          Poster design
+        </label>
+        {templates.length === 0 ? (
+          <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+            Using the built-in designs.{' '}
+            <Link href="/templates" className="font-semibold text-blue-700 underline">
+              Add your own templates
+            </Link>{' '}
+            to use your designs instead.
+          </p>
+        ) : (
+          <>
+            <select
+              id={`${fieldId}-template`}
+              value={templateId}
+              onChange={(event) => setTemplateId(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <option value="auto">Auto — match my templates by keyword</option>
+              <option value="builtin">Built-in designs (3 variations)</option>
+              <optgroup label="My templates">
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              {templateId === 'auto'
+                ? autoMatch
+                  ? `Matches “${autoMatch.name}”.`
+                  : values.title.trim()
+                    ? 'No keyword match yet — the built-in designs will be used.'
+                    : 'Matched from the title once you type it.'
+                : ' '}
+            </p>
+          </>
+        )}
+      </div>
 
       {showPastWarning && (
         <p className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">

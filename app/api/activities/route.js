@@ -21,6 +21,7 @@ const PERSISTED_FIELDS = [
   'formEditLink',
   'posterCount',
   'posterSource',
+  'templateId',
 ];
 
 function pickPersisted(activity) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import QRCode from 'qrcode';
@@ -9,6 +10,7 @@ import {
   Calendar,
   Check,
   CloudOff,
+  LayoutTemplate,
   Loader2,
   LogOut,
   RefreshCw,
@@ -19,6 +21,7 @@ import { PosterModal } from '@/components/PosterPreview';
 import { ToastStack, useToasts } from '@/components/Toast';
 import { loadLocalActivities, mergeActivities, saveLocalActivities } from '@/lib/storage';
 import { slugify } from '@/lib/format';
+import { matchTemplate } from '@/lib/templates';
 
 /** POST/PUT helper that turns a non-2xx response into a thrown Error. */
 async function sendJson(url, body, method = 'POST') {
@@ -42,6 +45,27 @@ async function sendJson(url, body, method = 'POST') {
     throw error;
   }
   return data;
+}
+
+/**
+ * Decide how a poster should be generated for an activity.
+ *
+ * "auto" is resolved here rather than on the server so that an activity with no
+ * keyword match quietly falls back to the built-in designs instead of coming
+ * back as an error.
+ */
+function resolvePosterMode(activity, templates) {
+  const choice = activity.templateId ?? 'auto';
+  if (choice === 'builtin' || templates.length === 0) return { mode: 'builtin' };
+
+  if (choice === 'auto') {
+    const match = matchTemplate(templates, activity.title);
+    return match ? { mode: 'custom', templateId: match.id } : { mode: 'builtin' };
+  }
+
+  // An explicitly chosen template that has since been deleted.
+  const exists = templates.some((template) => template.id === choice);
+  return exists ? { mode: 'custom', templateId: choice } : { mode: 'builtin' };
 }
 
 /** Build the QR payload: the form once it exists, otherwise the event details. */
@@ -70,6 +94,7 @@ export default function DashboardPage() {
   const [posters, setPosters] = useState({});
   const [busy, setBusy] = useState({});
   const [config, setConfig] = useState(null);
+  const [templates, setTemplates] = useState([]);
   const [syncState, setSyncState] = useState('idle'); // idle | saving | saved | error
   const [restoring, setRestoring] = useState(true);
   const [modal, setModal] = useState(null); // { activityId, index }
@@ -128,14 +153,22 @@ export default function DashboardPage() {
 
     (async () => {
       try {
-        const [configResponse, activitiesResponse] = await Promise.all([
+        const [configResponse, activitiesResponse, templatesResponse] = await Promise.all([
           fetch('/api/config'),
           fetch('/api/activities'),
+          fetch('/api/templates'),
         ]);
 
         if (cancelled) return;
 
         if (configResponse.ok) setConfig(await configResponse.json());
+
+        // Templates are optional: without them the built-in designs are used,
+        // so a failure here must not stop the activities from loading.
+        if (templatesResponse.ok) {
+          const data = await templatesResponse.json();
+          setTemplates(data.templates ?? []);
+        }
 
         if (!activitiesResponse.ok) {
           throw new Error(`Drive returned ${activitiesResponse.status}`);
@@ -248,6 +281,7 @@ export default function DashboardPage() {
         formEditLink: null,
         posterCount: 0,
         posterSource: null,
+        templateId: fields.templateId ?? 'auto',
       };
       pendingSave.current = true;
       setActivities((current) => [activity, ...current]);
@@ -277,14 +311,17 @@ export default function DashboardPage() {
 
   /** Generate posters for preview, without touching Drive. */
   const handlePreview = useCallback(
-    async (activity, mode) => {
-      setActivityBusy(activity.id, mode);
+    async (activity, requestedMode) => {
+      setActivityBusy(activity.id, requestedMode);
       try {
         const qrCodeUrl = await buildQrCode(activity);
+        const selection =
+          requestedMode === 'ai' ? { mode: 'ai' } : resolvePosterMode(activity, templates);
+
         const data = await sendJson('/api/generate-posters', {
           activity,
           qrCodeUrl,
-          mode,
+          ...selection,
         });
 
         setPosters((current) => ({ ...current, [activity.id]: data.posters }));
@@ -296,14 +333,18 @@ export default function DashboardPage() {
         const failed = data.failedCount
           ? ` ${data.failedCount} variation${data.failedCount > 1 ? 's' : ''} failed.`
           : '';
-        push('success', `${data.posters.length} posters ready. ${note}${failed}`);
+        const what =
+          data.posters.length === 1
+            ? `Poster ready from “${data.posters[0].colorScheme}”.`
+            : `${data.posters.length} posters ready.`;
+        push('success', `${what} ${note}${failed}`);
       } catch (err) {
         reportError(err, 'Poster generation failed.');
       } finally {
         setActivityBusy(activity.id, null);
       }
     },
-    [patchActivity, push, reportError, setActivityBusy],
+    [patchActivity, push, reportError, setActivityBusy, templates],
   );
 
   /**
@@ -360,17 +401,20 @@ export default function DashboardPage() {
         // against this form: regenerating those would charge the Anthropic
         // account again for an identical result.
         const withForm = { ...activity, formLink };
-        const mode = activity.posterSource === 'ai' ? 'ai' : 'template';
+        const selection =
+          activity.posterSource === 'ai'
+            ? { mode: 'ai' }
+            : resolvePosterMode(withForm, templates);
         let generated;
 
-        if (mode === 'ai' && postersAlreadyCorrect) {
+        if (selection.mode === 'ai' && postersAlreadyCorrect) {
           generated = { posters: posters[activity.id], mode: 'ai' };
         } else {
           const qrCodeUrl = await buildQrCode(withForm);
           generated = await sendJson('/api/generate-posters', {
             activity: withForm,
             qrCodeUrl,
-            mode,
+            ...selection,
           });
           setPosters((current) => ({ ...current, [activity.id]: generated.posters }));
         }
@@ -417,7 +461,7 @@ export default function DashboardPage() {
         setActivityBusy(activity.id, null);
       }
     },
-    [patchActivity, posters, push, reportError, setActivityBusy],
+    [patchActivity, posters, push, reportError, setActivityBusy, templates],
   );
 
   /**
@@ -495,13 +539,27 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => signOut({ callbackUrl: '/login' })}
-            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 font-bold text-white transition hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
-          >
-            <LogOut size={20} aria-hidden="true" /> Sign out
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/templates"
+              className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 font-bold text-gray-700 transition hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <LayoutTemplate size={20} aria-hidden="true" />
+              Templates
+              {templates.length > 0 && (
+                <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs text-white">
+                  {templates.length}
+                </span>
+              )}
+            </Link>
+            <button
+              type="button"
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 font-bold text-white transition hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+            >
+              <LogOut size={20} aria-hidden="true" /> Sign out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -522,7 +580,7 @@ export default function DashboardPage() {
           <div className="lg:col-span-1">
             <div className="sticky top-8 rounded-lg bg-white p-6 shadow-lg">
               <h2 className="mb-6 text-2xl font-bold text-gray-800">Create activity</h2>
-              <ActivityForm onAdd={handleAdd} />
+              <ActivityForm onAdd={handleAdd} templates={templates} />
             </div>
           </div>
 

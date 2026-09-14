@@ -57,6 +57,51 @@ network, and the same activity always produces exactly the same posters.
 
 ---
 
+## Using your own poster designs
+
+The built-in designs are only the fallback. **Templates** lets you upload your
+own artwork and have the app fill in the details.
+
+### Adding a template
+
+1. Design an A4 poster in Canva, Figma or Photoshop.
+2. **Leave the title, date, time, location and QR areas empty.** The app draws
+   those on top — anything baked into the image shows through underneath.
+3. Export as PNG or JPEG (any size; it is resized to A4 in your browser).
+4. In the app: **Templates → Choose an image**.
+5. Give it a name and **keywords** — e.g. `football, ფეხბურთი, soccer`.
+6. Drag the boxes onto the empty areas of your design. Click a box to change its
+   size, colour, alignment, weight and so on. Arrow keys nudge it; hold Shift
+   for bigger steps.
+7. **Save template.**
+
+### Using one
+
+The create form has a **Poster design** dropdown:
+
+- **Auto** — picks the template whose keyword appears in the activity title.
+  A title containing "Table Tennis" prefers a `table tennis` template over a
+  `tennis` one, because longer keywords win.
+- **A specific template** — always use that one.
+- **Built-in designs** — the three generated designs instead.
+
+If Auto finds no match, the built-in designs are used rather than failing.
+
+### Where templates live
+
+In your Google Drive, in a **Poster Templates** folder next to your activities.
+Nothing is stored on any server: your designs stay in your own Drive, which
+keeps the whole thing free and means they follow you to any machine.
+
+Uploaded images are resized to 1588 × 2246 (twice A4, so it prints sharply) and
+re-encoded in your browser before upload, targeting about 1 MB. A finished
+poster with the background embedded is roughly 1.5 MB.
+
+> Non-A4 images are centre-cropped to fit, and the app warns you how much was
+> trimmed. For an exact fit, export at A4 or any 794 × 1123 ratio.
+
+---
+
 ## Run it locally
 
 ```bash
