@@ -70,10 +70,19 @@ own artwork and have the app fill in the details.
 3. Export as PNG or JPEG (any size; it is resized to A3 in your browser).
 4. In the app: **Templates → Choose an image**.
 5. Give it a name and **keywords** — e.g. `football, ფეხბურთი, soccer`.
-6. Drag the boxes onto the empty areas of your design. Click a box to change its
-   size, colour, alignment, weight and so on. Arrow keys nudge it; hold Shift
-   for bigger steps.
-7. **Save template.**
+6. **Switch off anything your design already has.** Select a field and untick
+   *"Draw the … on the poster"*. Most templates made for a recurring event
+   already have the event's name and the college logo set into the artwork — in
+   that case switch **Title** off, or it will be printed twice, on top of your
+   own.
+7. Drag the remaining boxes onto the empty areas of your design. Click a box to
+   change its size, colour, alignment, weight and so on. Arrow keys nudge it;
+   hold Shift for bigger steps.
+8. **Save template.**
+
+A typical template therefore has **Title off** and **Date, Time, Location and
+QR on** — the design stays fixed, and only the event's details change from one
+activity to the next.
 
 ### Using one
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { AlignCenter, AlignLeft, AlignRight, QrCode, RotateCcw } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, EyeOff, QrCode, RotateCcw } from 'lucide-react';
 import { POSTER_HEIGHT, POSTER_WIDTH, TEXT_FIELDS, defaultLayout } from '@/lib/templates';
 
 const FIELD_KEYS = TEXT_FIELDS.map((f) => f.key);
@@ -127,6 +127,7 @@ export default function TemplateEditor({ imageUrl, layout, onChange, disabled = 
           {FIELD_KEYS.map((key) => {
             const f = layout[key];
             const isSelected = selected === key;
+            if (f.show === false) return null;
             return (
               <div
                 key={key}
@@ -198,21 +199,29 @@ export default function TemplateEditor({ imageUrl, layout, onChange, disabled = 
             Editing
           </span>
           <div className="flex flex-wrap gap-1.5">
-            {[...FIELD_KEYS, 'qr'].map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setSelected(key)}
-                className={`rounded-md px-2.5 py-1.5 text-sm font-semibold transition ${
-                  selected === key
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-100'
-                }`}
-              >
-                {key === 'qr' ? 'QR code' : LABELS[key]}
-              </button>
-            ))}
+            {[...FIELD_KEYS, 'qr'].map((key) => {
+              const hidden = (key === 'qr' ? layout.qr.show : layout[key].show) === false;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSelected(key)}
+                  className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-semibold transition ${
+                    selected === key
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 ring-1 ring-gray-300 hover:bg-gray-100'
+                  } ${hidden ? 'opacity-55 line-through' : ''}`}
+                >
+                  {hidden && <EyeOff size={12} aria-hidden="true" />}
+                  {key === 'qr' ? 'QR code' : LABELS[key]}
+                </button>
+              );
+            })}
           </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Switch off anything your design already includes — most templates made for a
+            recurring event already have the title on them.
+          </p>
         </div>
 
         {selected === 'qr' ? (
@@ -240,6 +249,23 @@ export default function TemplateEditor({ imageUrl, layout, onChange, disabled = 
           </div>
         ) : (
           <div className="space-y-3">
+            <label className="flex items-center gap-2 rounded-md bg-white p-2 text-sm font-medium text-gray-800 ring-1 ring-gray-200">
+              <input
+                type="checkbox"
+                checked={field.show !== false}
+                onChange={(e) => patch(selected, { show: e.target.checked })}
+                className="h-4 w-4"
+              />
+              Draw the {LABELS[selected].toLowerCase()} on the poster
+            </label>
+
+            {field.show === false ? (
+              <p className="rounded-md bg-amber-50 p-3 text-xs text-amber-900">
+                Hidden — the app will not draw the {LABELS[selected].toLowerCase()}. Use this when
+                your design already has it.
+              </p>
+            ) : (
+              <>
             <Slider label="Text size" value={field.size} min={1} max={16} step={0.1}
               onChange={(v) => patch(selected, { size: v })} suffix="%" />
             <Slider label="Box width" value={field.w} min={10} max={100} step={1}
@@ -299,6 +325,8 @@ export default function TemplateEditor({ imageUrl, layout, onChange, disabled = 
                 onChange={(e) => patch(selected, { shadow: e.target.checked })} />
               Shadow (helps on busy backgrounds)
             </label>
+              </>
+            )}
           </div>
         )}
 
