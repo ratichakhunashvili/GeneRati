@@ -3,6 +3,7 @@ import { readJson, requireSession, validateActivity } from '@/lib/api';
 import { getActivityKind } from '@/lib/posters/activities';
 import { buildTemplatePosters } from '@/lib/posters/templates';
 import { buildPosterFromTemplate } from '@/lib/posters/fromTemplate';
+import { PAGE_FORMAT, POSTER_HEIGHT, POSTER_WIDTH } from '@/lib/posters/page';
 import { driveClient, googleErrorMessage, readTemplateImage, readTemplateIndex } from '@/lib/google';
 import { matchTemplate } from '@/lib/templates';
 
@@ -66,10 +67,11 @@ PALETTE
 Primary ${c.primary} / Accent ${c.accent} / Deep ${c.glow} / Background ${c.dark}
 
 CANVAS
-Exactly 794x1123 CSS pixels (A4 at 96dpi), portrait. Wrap everything in a single
-.poster div with those fixed dimensions. Include @page { size: A4; margin: 0 },
-a @media print block, and print-color-adjust: exact so backgrounds survive
-printing.
+Exactly ${POSTER_WIDTH}x${POSTER_HEIGHT} CSS pixels (${PAGE_FORMAT} at 96dpi), portrait. Wrap everything
+in a single .poster div with those fixed dimensions. Include
+@page { size: ${PAGE_FORMAT}; margin: 0 }, a @media print block, and
+print-color-adjust: exact so backgrounds survive printing. This is a large
+sheet — scale type and spacing up accordingly, it is not an A4 poster.
 
 STYLE — ${style.name}
 ${style.brief}
@@ -89,7 +91,7 @@ ${
   qrCodeUrl
     ? `4. The QR code — reproduce this img tag EXACTLY as given, unchanged, on a
    white rounded card:
-   <img src="${qrCodeUrl}" width="212" height="212" alt="Register" />`
+   <img src="${qrCodeUrl}" width="300" height="300" alt="Register" />`
     : '4. No QR code for this poster; give the call to action that space instead.'
 }
 5. A short Georgian call to action.

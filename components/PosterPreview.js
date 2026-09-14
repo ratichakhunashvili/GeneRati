@@ -2,14 +2,11 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Download, X } from 'lucide-react';
-
-// The posters are authored at exactly A4 / 96dpi.
-const A4_WIDTH = 794;
-const A4_HEIGHT = 1123;
+import { POSTER_HEIGHT, POSTER_WIDTH } from '@/lib/posters/page';
 
 /**
- * Render poster HTML at true A4 size inside a sandboxed iframe, scaled to fit
- * its container.
+ * Render poster HTML at its true page size inside a sandboxed iframe, scaled
+ * to fit the container.
  *
  * The previous version injected the poster with `dangerouslySetInnerHTML`, which
  * could not work: each poster is a complete HTML document, and a browser
@@ -29,7 +26,7 @@ function ScaledPoster({ html, title, maxScale = 1 }) {
     const measure = () => {
       const { width, height } = container.getBoundingClientRect();
       if (!width || !height) return;
-      setScale(Math.min(width / A4_WIDTH, height / A4_HEIGHT, maxScale));
+      setScale(Math.min(width / POSTER_WIDTH, height / POSTER_HEIGHT, maxScale));
     };
 
     measure();
@@ -51,8 +48,8 @@ function ScaledPoster({ html, title, maxScale = 1 }) {
           position: 'absolute',
           top: '50%',
           left: '50%',
-          width: `${A4_WIDTH}px`,
-          height: `${A4_HEIGHT}px`,
+          width: `${POSTER_WIDTH}px`,
+          height: `${POSTER_HEIGHT}px`,
           border: 0,
           transformOrigin: 'center center',
           transform: `translate(-50%, -50%) scale(${scale})`,
@@ -66,7 +63,7 @@ function ScaledPoster({ html, title, maxScale = 1 }) {
   );
 }
 
-/** A clickable thumbnail that keeps the A4 aspect ratio at any card width. */
+/** A clickable thumbnail that keeps the page aspect ratio at any card width. */
 export function PosterThumbnail({ poster, label, onOpen, onDownload }) {
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md">
@@ -74,7 +71,7 @@ export function PosterThumbnail({ poster, label, onOpen, onDownload }) {
         type="button"
         onClick={onOpen}
         className="block w-full cursor-zoom-in bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
-        style={{ aspectRatio: `${A4_WIDTH} / ${A4_HEIGHT}` }}
+        style={{ aspectRatio: `${POSTER_WIDTH} / ${POSTER_HEIGHT}` }}
         aria-label={`Enlarge ${label}`}
       >
         <ScaledPoster html={poster.html} title={label} />

@@ -14,7 +14,7 @@ deliberately opt in.
 
 | Thing | Where it lands |
 |---|---|
-| 3 printable A4 posters (HTML, print to PDF) | A Google Drive folder named after the activity |
+| 3 printable **A3** posters (HTML, print to PDF) | A Google Drive folder named after the activity |
 | A registration form in Georgian | The same Drive folder |
 | A QR code pointing at that form | Printed on all three posters |
 
@@ -64,10 +64,10 @@ own artwork and have the app fill in the details.
 
 ### Adding a template
 
-1. Design an A4 poster in Canva, Figma or Photoshop.
+1. Design an **A3** poster (297 × 420 mm) in Canva, Figma or Photoshop.
 2. **Leave the title, date, time, location and QR areas empty.** The app draws
    those on top — anything baked into the image shows through underneath.
-3. Export as PNG or JPEG (any size; it is resized to A4 in your browser).
+3. Export as PNG or JPEG (any size; it is resized to A3 in your browser).
 4. In the app: **Templates → Choose an image**.
 5. Give it a name and **keywords** — e.g. `football, ფეხბურთი, soccer`.
 6. Drag the boxes onto the empty areas of your design. Click a box to change its
@@ -93,12 +93,13 @@ In your Google Drive, in a **Poster Templates** folder next to your activities.
 Nothing is stored on any server: your designs stay in your own Drive, which
 keeps the whole thing free and means they follow you to any machine.
 
-Uploaded images are resized to 1588 × 2246 (twice A4, so it prints sharply) and
-re-encoded in your browser before upload, targeting about 1 MB. A finished
-poster with the background embedded is roughly 1.5 MB.
+Uploaded images are resized to 1685 × 2381 (1.5× A3, ~144dpi, which is plenty
+for something read from across a room) and re-encoded in your browser before
+upload, targeting about 1.5 MB. A finished poster with the background embedded
+is roughly 2 MB.
 
-> Non-A4 images are centre-cropped to fit, and the app warns you how much was
-> trimmed. For an exact fit, export at A4 or any 794 × 1123 ratio.
+> Non-A3 images are centre-cropped to fit, and the app warns you how much was
+> trimmed. For an exact fit, export at A3 or any 1123 × 1587 ratio.
 
 ---
 
@@ -365,5 +366,16 @@ lib/
 ## Printing a poster
 
 Posters download as `.html`. Open one in a browser and print it (`Ctrl/Cmd+P`),
-choosing **A4**, **Portrait**, margins **None**, and enable **Background
+choosing **A3**, **Portrait**, margins **None**, and enable **Background
 graphics** so the colours print. Or "Save as PDF" from the same dialog.
+
+The page size is set in the file itself, so a browser that honours the
+document's own page size will pick A3 without being told. If your printer only
+takes A4, choose **Scale: Fit to page** and it will shrink cleanly — every
+dimension is proportional.
+
+> Changing the paper size for the whole app is one constant:
+> `PAGE_FORMAT`, `POSTER_WIDTH` and `POSTER_HEIGHT` in
+> [`lib/posters/page.js`](lib/posters/page.js). The built-in designs are
+> authored against a fixed coordinate system and scaled onto whatever page is
+> configured, so they need no changes.

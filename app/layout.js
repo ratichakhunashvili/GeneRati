@@ -4,7 +4,7 @@ import Providers from './providers';
 export const metadata = {
   title: 'SkillWill Activity Calendar',
   description:
-    'Create college activities, generate printable A4 posters with a registration QR code, and file them in Google Drive.',
+    'Create college activities, generate printable A3 posters with a registration QR code, and file them in Google Drive.',
   // This is an internal admin tool; keep it out of search results.
   robots: { index: false, follow: false },
 };

@@ -7,7 +7,7 @@ import { useSession } from 'next-auth/react';
 import { ArrowLeft, ImagePlus, Loader2, Pencil, Save, Trash2, X } from 'lucide-react';
 import TemplateEditor from '@/components/TemplateEditor';
 import { ToastStack, useToasts } from '@/components/Toast';
-import { defaultLayout } from '@/lib/templates';
+import { ASPECT_RATIO, PAGE_FORMAT, POSTER_HEIGHT, POSTER_WIDTH, defaultLayout } from '@/lib/templates';
 import { formatBytes, normaliseTemplateImage } from '@/lib/imageResize';
 
 async function sendJson(url, body, method = 'POST') {
@@ -62,7 +62,7 @@ export default function TemplatesPage() {
     if (status === 'authenticated') load();
   }, [status, load]);
 
-  /** Read the chosen file, normalise it to A4, and open the editor. */
+  /** Read the chosen file, normalise it to the page size, and open the editor. */
   const handleFile = async (file) => {
     if (!file) return;
     setBusy(true);
@@ -72,8 +72,8 @@ export default function TemplatesPage() {
       if (image.croppedPercent >= 8) {
         push(
           'warning',
-          `That image is not A4-shaped, so about ${image.croppedPercent}% was cropped to fit. ` +
-            'For an exact fit, export at A4 (or any 794 × 1123 ratio).',
+          `That image is not ${PAGE_FORMAT}-shaped, so about ${image.croppedPercent}% was cropped to fit. ` +
+            `For an exact fit, export at ${PAGE_FORMAT} (or any ${POSTER_WIDTH} × ${POSTER_HEIGHT} ratio).`,
         );
       }
 
@@ -258,7 +258,8 @@ export default function TemplatesPage() {
             <section className="mb-8 rounded-lg bg-white p-6 shadow-lg">
               <h2 className="mb-2 text-xl font-bold text-gray-800">Add a template</h2>
               <p className="mb-4 max-w-3xl text-sm text-gray-600">
-                Design an A4 poster in Canva, Figma or Photoshop and export it as a PNG or JPEG.
+                Design an <strong className="text-gray-800">{PAGE_FORMAT}</strong> poster (297 × 420 mm)
+                in Canva, Figma or Photoshop and export it as a PNG or JPEG.
                 <strong className="text-gray-800">
                   {' '}
                   Leave the title, date, time, location and QR areas empty
@@ -307,7 +308,7 @@ export default function TemplatesPage() {
                     >
                       <div
                         className="bg-gray-100"
-                        style={{ aspectRatio: '794 / 1123' }}
+                        style={{ aspectRatio: ASPECT_RATIO }}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
