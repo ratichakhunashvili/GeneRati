@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { readJson, requireSession, validateActivity } from '@/lib/api';
-import { getSchemes } from '@/lib/posters/schemes';
+import { getActivityKind } from '@/lib/posters/activities';
 import { buildTemplatePosters } from '@/lib/posters/templates';
 
 // Vercel's free Hobby plan caps a function at 60s. The template path returns in
@@ -21,70 +21,99 @@ function safeQrCodeUrl(value) {
     : null;
 }
 
-function buildPrompt(activity, scheme, variation, qrCodeUrl) {
-  return `Design a single event poster as one self-contained HTML document.
+// The AI variations mirror the three built-in styles, so a deployment with a
+// key produces alternatives to the templates rather than a different universe.
+const AI_STYLES = [
+  {
+    name: 'Bold',
+    brief:
+      'Heavy and high-contrast. Oversized uppercase title with tight leading, a ' +
+      'diagonal colour band behind it, details in solid pills, QR bottom-right. ' +
+      'Must read from across a corridor.',
+  },
+  {
+    name: 'Premium',
+    brief:
+      'Quiet and symmetrical. Centred composition, generous whitespace, a lighter ' +
+      'title weight with one bold accent, thin hairline dividers, deep gradient ' +
+      'background, QR centred near the bottom. Should feel like a gallery invite.',
+  },
+  {
+    name: 'Playful',
+    brief:
+      'Bright and energetic. Use the primary colour as the dominant background ' +
+      'rather than a dark base, slightly rotated sticker-style detail chips with ' +
+      'hard offset shadows, chunky rounded type, a tilted QR card.',
+  },
+];
+
+function buildPrompt(activity, kind, style, qrCodeUrl) {
+  const c = kind.palette;
+  return `Design an event poster as one self-contained HTML document.
 
 EVENT
 Title: ${activity.title}
 Date: ${activity.date}
 Time: ${activity.time}
 Location: ${activity.location}
+Activity type: ${kind.label}
 Organizer: SkillWill College
 
-PALETTE (${scheme.name})
-Primary ${scheme.primary} / Accent ${scheme.accent} / Background ${scheme.secondary}
+PALETTE
+Primary ${c.primary} / Accent ${c.accent} / Deep ${c.glow} / Background ${c.dark}
 
 CANVAS
 Exactly 794x1123 CSS pixels (A4 at 96dpi), portrait. Wrap everything in a single
-.poster div with those fixed dimensions. Include @page { size: A4; margin: 0 }
-and a @media print block so it prints edge to edge with no scaling.
+.poster div with those fixed dimensions. Include @page { size: A4; margin: 0 },
+a @media print block, and print-color-adjust: exact so backgrounds survive
+printing.
 
-LAYOUT, top to bottom
-1. Title — very large, heavy weight, primary color, 1-2 lines, tight leading.
-2. A thin accent rule or brush shape beneath it.
-3. An info row: date, time, location. Each in a rounded pill with a small
-   inline-SVG icon (calendar, clock, map pin). Never use emoji.
+STYLE — ${style.name}
+${style.brief}
+
+SUBJECT ARTWORK (this is the important part)
+Draw inline SVG artwork specific to ${kind.label}, not generic decoration. Think
+about what this activity actually looks like — its playing surface, equipment,
+markings, or setting — and build abstract geometric artwork from that, used as a
+faint full-bleed backdrop and as one bold focal emblem. Flat shapes and strokes
+only.
+
+CONTENT, in this order
+1. "SkillWill College" as a small uppercase kicker.
+2. The title, very large.
+3. Date, time and location, each with a small inline-SVG icon. Never use emoji.
 ${
   qrCodeUrl
-    ? `4. QR code — the exact img tag below, unchanged, on a white rounded card
-   with a ${scheme.primary} border about 12px thick, horizontally centered:
-   <img src="${qrCodeUrl}" width="220" height="220" alt="Register" />`
-    : '4. Skip the QR code for this poster; leave the space for the call to action.'
+    ? `4. The QR code — reproduce this img tag EXACTLY as given, unchanged, on a
+   white rounded card:
+   <img src="${qrCodeUrl}" width="212" height="212" alt="Register" />`
+    : '4. No QR code for this poster; give the call to action that space instead.'
 }
-5. A short call-to-action line under the QR in ${scheme.accent}.
+5. A short Georgian call to action.
 6. Footer: "ორგანიზატორი: SkillWill College" in small light text.
 
 TEXT
-Georgian text must be reproduced exactly as given. Use a font stack that
-includes 'Noto Sans Georgian', 'BPG Arial' and Sylfaen so Georgian renders.
+Reproduce Georgian text exactly as given. Use a font stack including
+'Noto Sans Georgian', 'BPG Arial' and Sylfaen so Georgian renders.
 
-STYLE
-Dark ${scheme.secondary} base with a subtle CSS gradient and a few soft radial
-glows in ${scheme.primary}. Depth via box-shadow and layering only — no external
-images, no icon fonts, no web font imports. Use system sans-serif stacks.
-Everything must render offline from this file alone.
-
-This is variation ${variation} of 3 — give it a distinct composition from a plain
-centered stack: try an offset title, a diagonal accent band, or an asymmetric
-info row. Keep it legible at arm's length on a wall.
+CONSTRAINTS
+No external images, no icon fonts, no web font imports, no scripts. Everything
+must render offline from this one file.
 
 Output the raw HTML document only. No markdown fences, no commentary.`;
 }
 
-async function generateOne(client, activity, scheme, variation, qrCodeUrl) {
+async function generateOne(client, activity, kind, style, qrCodeUrl) {
   const message = await client.messages.create({
     model: 'claude-sonnet-5',
-    // A full A4 document runs several thousand tokens; 8000 left almost no
-    // headroom and truncated posters mid-document.
+    // A full A4 document with hand-drawn SVG artwork runs long; too low a cap
+    // truncates the document mid-element.
     max_tokens: 16000,
     // Sonnet 5 runs adaptive thinking whenever `thinking` is omitted, and those
     // tokens count against max_tokens and against the wall clock. Three of
-    // these run in parallel inside a 60s function limit, and laying out a
-    // poster does not need deliberation, so opt out explicitly.
+    // these run in parallel inside a 60s function limit.
     thinking: { type: 'disabled' },
-    messages: [
-      { role: 'user', content: buildPrompt(activity, scheme, variation, qrCodeUrl) },
-    ],
+    messages: [{ role: 'user', content: buildPrompt(activity, kind, style, qrCodeUrl) }],
   });
 
   if (message.stop_reason === 'refusal') {
@@ -116,8 +145,8 @@ async function generateOne(client, activity, scheme, variation, qrCodeUrl) {
 
   return {
     html,
-    colorScheme: scheme.name,
-    variationNumber: variation,
+    colorScheme: `${kind.label} · ${style.name} (AI)`,
+    variationNumber: AI_STYLES.indexOf(style) + 1,
     source: 'ai',
   };
 }
@@ -134,15 +163,16 @@ export async function POST(request) {
   const invalid = validateActivity(activity);
   if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 
-  const schemes = getSchemes(activity.title);
   const qr = safeQrCodeUrl(qrCodeUrl);
+  const kind = getActivityKind(activity.title);
 
   // Default path: rendered locally, instantly, at no cost.
   if (mode !== 'ai') {
     return NextResponse.json({
-      posters: buildTemplatePosters(activity, schemes, qr),
+      posters: buildTemplatePosters(activity, qr),
       failedCount: 0,
       mode: 'template',
+      activityKind: kind.label,
     });
   }
 
@@ -150,7 +180,7 @@ export async function POST(request) {
     return NextResponse.json(
       {
         error:
-          'AI posters are not configured on this deployment. Add ANTHROPIC_API_KEY to enable them, or use the free template posters.',
+          'AI posters are not configured on this deployment. Add ANTHROPIC_API_KEY to enable them, or use the free built-in designs.',
         code: 'AI_NOT_CONFIGURED',
       },
       { status: 501 },
@@ -164,9 +194,7 @@ export async function POST(request) {
 
     // In parallel because three sequential generations would exceed the 60s cap.
     const results = await Promise.allSettled(
-      schemes.map((scheme, index) =>
-        generateOne(client, activity, scheme, index + 1, qr),
-      ),
+      AI_STYLES.map((style) => generateOne(client, activity, kind, style, qr)),
     );
 
     const posters = results
@@ -186,6 +214,7 @@ export async function POST(request) {
       posters,
       failedCount: failures.length,
       mode: 'ai',
+      activityKind: kind.label,
     });
   } catch (err) {
     console.error('[generate-posters] AI generation failed:', err);

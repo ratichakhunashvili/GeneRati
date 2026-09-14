@@ -20,6 +20,43 @@ deliberately opt in.
 
 ---
 
+## How the posters are designed
+
+The app reads the activity title and recognises **what the event actually is**,
+then draws artwork to match — football gets pitch markings and a ball, chess
+gets a board and a king, a quiz night gets question marks and answer bubbles.
+Each activity also carries its own colour identity.
+
+Recognised in **English and Georgian**:
+
+| | | |
+|---|---|---|
+| Football / ფეხბურთი | Volleyball / ფრენბურთი | Basketball / კალათბურთი |
+| Tennis / ჩოგბურთი | Table tennis / მაგიდის ჩოგბურთი | Padel / პადელი |
+| Running / სირბილი | Swimming / ცურვა | Chess / ჭადრაკი |
+| Darts / დარტსი | Billiards / ბილიარდი | Board games / სამაგიდო თამაშები |
+| Esports / ესპორტი | Quiz / ვიქტორინა | Mystery night / მგელი, მაფია |
+| Party / წვეულება, კარაოკე | Movie night / ფილმი, კინო | Hackathon / ჰაკათონი |
+| Debate / დებატები | Workshop / ვორქშოპი, სემინარი | anything else → a neutral design |
+
+Every activity produces **three different styles**, so you can pick whichever
+suits the event:
+
+- **Bold** — oversized uppercase title, diagonal colour band, high contrast.
+  Readable from the far end of a corridor.
+- **Premium** — centred, restrained, generous whitespace and a deep gradient.
+  For talks, ceremonies and anything formal.
+- **Playful** — bright background, tilted sticker-style details, chunky type.
+  For winning attention on a crowded noticeboard.
+
+All of it is drawn by the app as inline SVG and CSS: no API key, no cost, no
+network, and the same activity always produces exactly the same posters.
+
+> Adding a new sport is a small edit: add its keywords and colours to
+> `lib/posters/activities.js`, and its artwork to `lib/posters/artwork.js`.
+
+---
+
 ## Run it locally
 
 ```bash
