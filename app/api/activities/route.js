@@ -20,8 +20,10 @@ const PERSISTED_FIELDS = [
   'formLink',
   'formEditLink',
   'posterCount',
-  'posterSource',
-  'templateId',
+  // The last poster ComfyUI rendered for this activity. Keeping the id lets the
+  // poster be re-composed without spending the GPU again, for as long as it
+  // stays in ComfyUI's in-memory history.
+  'posterJobId',
 ];
 
 function pickPersisted(activity) {

@@ -1,0 +1,65 @@
+{
+  "10": {
+    "inputs": { "unet_name": "flux1-schnell-Q4_K_S.gguf" },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": { "title": "Load FLUX (GGUF Q4_K_S)" }
+  },
+  "11": {
+    "inputs": {
+      "clip_name1": "t5xxl_fp8_e4m3fn.safetensors",
+      "clip_name2": "clip_l.safetensors",
+      "type": "flux"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": { "title": "Load text encoders (T5-XXL + CLIP-L)" }
+  },
+  "12": {
+    "inputs": { "vae_name": "ae.safetensors" },
+    "class_type": "VAELoader",
+    "_meta": { "title": "Load FLUX VAE" }
+  },
+  "20": {
+    "inputs": {
+      "text": "placeholder prompt, replaced at runtime",
+      "clip": ["11", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "Poster prompt" }
+  },
+  "21": {
+    "inputs": { "conditioning": ["20", 0] },
+    "class_type": "ConditioningZeroOut",
+    "_meta": { "title": "Empty negative" }
+  },
+  "30": {
+    "inputs": { "width": 896, "height": 1280, "batch_size": 1 },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": { "title": "Empty latent (A3 portrait ratio)" }
+  },
+  "40": {
+    "inputs": {
+      "seed": 42,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["10", 0],
+      "positive": ["20", 0],
+      "negative": ["21", 0],
+      "latent_image": ["30", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "KSampler" }
+  },
+  "50": {
+    "inputs": { "samples": ["40", 0], "vae": ["12", 0] },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE Decode" }
+  },
+  "60": {
+    "inputs": { "filename_prefix": "skillwill_poster", "images": ["50", 0] },
+    "class_type": "SaveImage",
+    "_meta": { "title": "Save Image" }
+  }
+}

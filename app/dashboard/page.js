@@ -1,27 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import QRCode from 'qrcode';
-import {
-  AlertTriangle,
-  Calendar,
-  Check,
-  CloudOff,
-  LayoutTemplate,
-  Loader2,
-  LogOut,
-  RefreshCw,
-} from 'lucide-react';
+import { AlertTriangle, Calendar, Check, CloudOff, Loader2, LogOut, RefreshCw, Wand2 } from 'lucide-react';
 import ActivityCard from '@/components/ActivityCard';
 import ActivityForm from '@/components/ActivityForm';
 import { PosterModal } from '@/components/PosterPreview';
 import { ToastStack, useToasts } from '@/components/Toast';
 import { loadLocalActivities, mergeActivities, saveLocalActivities } from '@/lib/storage';
 import { slugify } from '@/lib/format';
-import { matchTemplate } from '@/lib/templates';
 
 /** POST/PUT helper that turns a non-2xx response into a thrown Error. */
 async function sendJson(url, body, method = 'POST') {
@@ -47,50 +36,49 @@ async function sendJson(url, body, method = 'POST') {
   return data;
 }
 
-/**
- * Decide how a poster should be generated for an activity.
- *
- * "auto" is resolved here rather than on the server so that an activity with no
- * keyword match quietly falls back to the built-in designs instead of coming
- * back as an error.
- */
-function resolvePosterMode(activity, templates) {
-  const choice = activity.templateId ?? 'auto';
+/** The same, for a GET — which may not carry a body at all. */
+async function getJson(url) {
+  const response = await fetch(url, { cache: 'no-store' });
 
-  if (choice === 'builtin') return { mode: 'builtin' };
-  if (templates.length === 0) return { mode: 'builtin' };
-
-  if (choice === 'auto') {
-    const match = matchTemplate(templates, activity.title);
-    return match
-      ? { mode: 'custom', templateId: match.id }
-      : // Falling back is right, but doing it silently is not: the poster comes
-        // back looking nothing like the user's design with no explanation.
-        { mode: 'builtin', fellBackFrom: 'no-keyword-match' };
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {
+    /* Handled by the status check below. */
   }
 
-  const exists = templates.some((template) => template.id === choice);
-  return exists
-    ? { mode: 'custom', templateId: choice }
-    : { mode: 'builtin', fellBackFrom: 'template-deleted' };
+  if (!response.ok) {
+    const error = new Error(data.error || `Request failed (${response.status})`);
+    error.code = data.code;
+    error.status = response.status;
+    throw error;
+  }
+  return data;
 }
 
-/** Explain a fallback so it never looks like the app ignored the choice. */
-const FALLBACK_MESSAGE = {
-  'no-keyword-match':
-    'None of your templates has a keyword matching this title, so the built-in designs were used. ' +
-    'Add a matching keyword on the Templates page, or pick a template directly when creating the activity.',
-  'template-deleted':
-    'The template chosen for this activity no longer exists, so the built-in designs were used.',
-};
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Build the QR payload: the form once it exists, otherwise the event details. */
-async function buildQrCode(activity) {
-  const payload =
-    activity.formLink ||
-    `${activity.title}\n${activity.date} ${activity.time}\n${activity.location}`;
+// A poster takes about a minute on the host GPU, and the first render after
+// ComfyUI starts also loads ~11GB of weights. Five minutes covers the bad case.
+const RENDER_TIMEOUT_MS = 5 * 60 * 1000;
+const RENDER_POLL_MS = 2000;
+
+/**
+ * How many polls in a row may fail before a render is written off.
+ *
+ * Polls genuinely do fail mid-render: the host machine is under real memory
+ * pressure while the model is resident, and both ComfyUI and the tunnel can stop
+ * answering for a stretch. Treating the first failure as fatal throws away a
+ * poster that is still rendering perfectly well. At 2s a poll this tolerates a
+ * minute of silence.
+ */
+const MAX_POLL_FAILURES = 30;
+
+/** Build the QR payload from the registration form the poster is made for. */
+async function buildQrCode(formLink) {
+  if (!formLink) return null;
   try {
-    return await QRCode.toDataURL(payload, {
+    return await QRCode.toDataURL(formLink, {
       width: 440,
       margin: 1,
       errorCorrectionLevel: 'M',
@@ -110,10 +98,10 @@ export default function DashboardPage() {
   const [posters, setPosters] = useState({});
   const [busy, setBusy] = useState({});
   const [config, setConfig] = useState(null);
-  const [templates, setTemplates] = useState([]);
   const [syncState, setSyncState] = useState('idle'); // idle | saving | saved | error
   const [restoring, setRestoring] = useState(true);
   const [modal, setModal] = useState(null); // { activityId, index }
+  const [progress, setProgress] = useState({}); // activityId -> progress line
 
   const hydrated = useRef(false);
   const saveTimer = useRef(null);
@@ -133,6 +121,10 @@ export default function DashboardPage() {
 
   const setActivityBusy = useCallback((id, value) => {
     setBusy((current) => ({ ...current, [id]: value }));
+  }, []);
+
+  const setProgressLine = useCallback((id, value) => {
+    setProgress((current) => ({ ...current, [id]: value }));
   }, []);
 
   /** Surface an error, routing an expired session to a re-sign-in prompt. */
@@ -169,22 +161,14 @@ export default function DashboardPage() {
 
     (async () => {
       try {
-        const [configResponse, activitiesResponse, templatesResponse] = await Promise.all([
+        const [configResponse, activitiesResponse] = await Promise.all([
           fetch('/api/config'),
           fetch('/api/activities'),
-          fetch('/api/templates'),
         ]);
 
         if (cancelled) return;
 
         if (configResponse.ok) setConfig(await configResponse.json());
-
-        // Templates are optional: without them the built-in designs are used,
-        // so a failure here must not stop the activities from loading.
-        if (templatesResponse.ok) {
-          const data = await templatesResponse.json();
-          setTemplates(data.templates ?? []);
-        }
 
         if (!activitiesResponse.ok) {
           throw new Error(`Drive returned ${activitiesResponse.status}`);
@@ -244,10 +228,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!hydrated.current) return undefined;
 
-    // The browser copy is always safe to write and is the offline fallback.
     saveLocalActivities(activities);
-
-    // Nothing the user actually changed, so there is nothing to push.
     if (!pendingSave.current) return undefined;
 
     if (!driveReadOk.current) {
@@ -296,12 +277,11 @@ export default function DashboardPage() {
         formLink: null,
         formEditLink: null,
         posterCount: 0,
-        posterSource: null,
-        templateId: fields.templateId ?? 'auto',
+        posterJobId: null,
       };
       pendingSave.current = true;
       setActivities((current) => [activity, ...current]);
-      push('success', `“${activity.title}” added. Generate posters or publish it to Drive.`);
+      push('success', `“${activity.title}” added. Generate its poster next.`);
     },
     [push],
   );
@@ -325,177 +305,201 @@ export default function DashboardPage() {
     [push],
   );
 
-  /** Generate posters for preview, without touching Drive. */
-  const handlePreview = useCallback(
-    async (activity, requestedMode) => {
-      setActivityBusy(activity.id, requestedMode);
-      try {
-        const qrCodeUrl = await buildQrCode(activity);
-        const { fellBackFrom, ...selection } =
-          requestedMode === 'ai' ? { mode: 'ai' } : resolvePosterMode(activity, templates);
+  /**
+   * Make sure the activity has a Drive folder and a registration form.
+   *
+   * This runs before the poster is rendered, not after. The QR code printed on
+   * the poster has to point at the form, so the form has to exist first —
+   * otherwise the poster carries a QR to nothing and has to be thrown away.
+   */
+  const ensureForm = useCallback(
+    async (activity) => {
+      let { folderId, folderLink, formId, formLink, formEditLink } = activity;
 
-        if (fellBackFrom) push('warning', FALLBACK_MESSAGE[fellBackFrom]);
-
-        const data = await sendJson('/api/generate-posters', {
-          activity,
-          qrCodeUrl,
-          ...selection,
+      if (!folderId) {
+        const folder = await sendJson('/api/drive-integration', {
+          action: 'createFolder',
+          activityTitle: activity.title,
         });
+        folderId = folder.folderId;
+        folderLink = folder.folderLink;
+
+        if (folder.usedFallback) {
+          push(
+            'warning',
+            `GOOGLE_DRIVE_FOLDER_ID could not be used (${folder.fallbackReason}). The folder was created at the root of your Drive instead.`,
+          );
+        }
+      }
+
+      if (!formId) {
+        const form = await sendJson('/api/create-form', {
+          activityTitle: activity.title,
+          date: activity.date,
+          time: activity.time,
+          location: activity.location,
+          folderId,
+        });
+        formId = form.formId;
+        formLink = form.formLink;
+        formEditLink = form.editLink;
+      }
+
+      patchActivity(activity.id, { folderId, folderLink, formId, formLink, formEditLink });
+      return { folderId, folderLink, formId, formLink, formEditLink };
+    },
+    [patchActivity, push],
+  );
+
+  /**
+   * Generate the poster: form first, then render, then lay the QR over it.
+   *
+   * The waiting happens here in the browser rather than inside one long request,
+   * because a serverless function cannot stay open for the minute a render takes.
+   */
+  const handleGenerate = useCallback(
+    async (activity) => {
+      setActivityBusy(activity.id, 'generate');
+      setProgressLine(activity.id, 'Preparing the registration form…');
+
+      try {
+        const { formLink } = await ensureForm(activity);
+        const qrCodeUrl = await buildQrCode(formLink);
+
+        setProgressLine(activity.id, 'Queueing the render…');
+        const { jobId } = await sendJson('/api/generate-image', { activity });
+
+        const startedAt = Date.now();
+        let ready = false;
+        let failures = 0;
+
+        while (Date.now() - startedAt < RENDER_TIMEOUT_MS) {
+          await sleep(RENDER_POLL_MS);
+          const elapsed = Math.round((Date.now() - startedAt) / 1000);
+
+          let jobStatus;
+          try {
+            jobStatus = await getJson(`/api/generate-image/${jobId}`);
+            failures = 0;
+          } catch (err) {
+            // A rejected session or a locked-down account will not fix itself.
+            if (err.status === 401 || err.status === 403) throw err;
+
+            failures += 1;
+            if (failures >= MAX_POLL_FAILURES) {
+              throw new Error(
+                'Lost contact with the poster generator mid-render. Check that ComfyUI, Caddy ' +
+                  'and cloudflared are all still running on the host machine.',
+              );
+            }
+            setProgressLine(
+              activity.id,
+              `Rendering… ${elapsed}s — host machine not responding, still retrying`,
+            );
+            continue;
+          }
+
+          if (jobStatus.status === 'done') {
+            ready = true;
+            break;
+          }
+          if (jobStatus.status === 'error') {
+            throw new Error(jobStatus.message || 'The render failed on the GPU.');
+          }
+
+          setProgressLine(activity.id, `Rendering the poster… ${elapsed}s`);
+        }
+
+        if (!ready) {
+          throw new Error(
+            'The render is still not finished after five minutes. Check ComfyUI on the host ' +
+              'machine — it may be out of memory or stuck behind a queued job.',
+          );
+        }
+
+        setProgressLine(activity.id, 'Adding the QR code…');
+        const compose = () =>
+          sendJson('/api/generate-posters', { activity, qrCodeUrl, jobId });
+
+        // This step pulls the full poster back through the tunnel, the largest
+        // transfer in the flow and the one most likely to be interrupted by a
+        // machine still recovering from the render. One retry turns the common
+        // case from a lost poster into a pause.
+        let data;
+        try {
+          data = await compose();
+        } catch (err) {
+          if (err.code !== 'COMFY_UNAVAILABLE') throw err;
+          setProgressLine(activity.id, 'Adding the QR code… retrying');
+          await sleep(3000);
+          data = await compose();
+        }
 
         setPosters((current) => ({ ...current, [activity.id]: data.posters }));
-        patchActivity(activity.id, { posterSource: data.mode });
+        patchActivity(activity.id, { posterJobId: jobId });
 
-        const note = activity.formLink
-          ? 'The QR code points at the registration form.'
-          : 'The QR code carries the event details — publish to Drive to point it at a form.';
-        const failed = data.failedCount
-          ? ` ${data.failedCount} variation${data.failedCount > 1 ? 's' : ''} failed.`
-          : '';
-        const what =
-          data.posters.length === 1
-            ? `Poster ready from “${data.posters[0].colorScheme}”.`
-            : `${data.posters.length} posters ready.`;
-        push('success', `${what} ${note}${failed}`);
+        push(
+          'success',
+          'Poster ready. Check the date and time on it before publishing — the model gets ' +
+            'those wrong more often than not, so regenerate if they are off.',
+        );
       } catch (err) {
         reportError(err, 'Poster generation failed.');
       } finally {
         setActivityBusy(activity.id, null);
+        setProgressLine(activity.id, null);
       }
     },
-    [patchActivity, push, reportError, setActivityBusy, templates],
+    [ensureForm, patchActivity, push, reportError, setActivityBusy, setProgressLine],
   );
 
-  /**
-   * Publish everything in the order that makes the QR code correct.
-   *
-   * Folder, then form, then posters — because the QR has to contain the form
-   * URL, and the form URL does not exist until the form has been created. The
-   * old flow generated posters first, so the printed QR never reached the form.
-   */
+  /** Upload the approved poster into the activity's Drive folder. */
   const handlePublish = useCallback(
     async (activity) => {
+      const poster = posters[activity.id]?.[0];
+      if (!poster) {
+        push('error', 'Generate a poster first, then publish it.');
+        return;
+      }
+
       setActivityBusy(activity.id, 'publish');
       try {
-        let { folderId, folderLink, formId, formLink, formEditLink } = activity;
-        // Posters already on screen were built with the form URL in their QR
-        // only if the form existed when they were generated.
-        const postersAlreadyCorrect = Boolean(activity.formLink && posters[activity.id]?.length);
+        // The folder always exists by now: generating the poster created it
+        // along with the form. This is only a guard against a stale record.
+        const { folderId, folderLink } = await ensureForm(activity);
 
-        if (!folderId) {
-          const folder = await sendJson('/api/drive-integration', {
-            action: 'createFolder',
-            activityTitle: activity.title,
-          });
-          folderId = folder.folderId;
-          folderLink = folder.folderLink;
-          patchActivity(activity.id, { folderId, folderLink });
-
-          if (folder.usedFallback) {
-            push(
-              'warning',
-              `GOOGLE_DRIVE_FOLDER_ID could not be used (${folder.fallbackReason}). The folder was created at the root of your Drive instead.`,
-            );
-          }
-        }
-
-        if (!formId) {
-          const form = await sendJson('/api/create-form', {
-            activityTitle: activity.title,
-            date: activity.date,
-            time: activity.time,
-            location: activity.location,
-            folderId,
-          });
-          formId = form.formId;
-          formLink = form.formLink;
-          formEditLink = form.editLink;
-          patchActivity(activity.id, { formId, formLink, formEditLink });
-        }
-
-        // Rebuild the posters now that the form URL exists, so the printed QR
-        // actually reaches the form.
-        //
-        // The exception is a re-publish of AI posters that were already built
-        // against this form: regenerating those would charge the Anthropic
-        // account again for an identical result.
-        const withForm = { ...activity, formLink };
-        const { fellBackFrom, ...selection } =
-          activity.posterSource === 'ai'
-            ? { mode: 'ai' }
-            : resolvePosterMode(withForm, templates);
-
-        if (fellBackFrom) push('warning', FALLBACK_MESSAGE[fellBackFrom]);
-        let generated;
-
-        if (selection.mode === 'ai' && postersAlreadyCorrect) {
-          generated = { posters: posters[activity.id], mode: 'ai' };
-        } else {
-          const qrCodeUrl = await buildQrCode(withForm);
-          generated = await sendJson('/api/generate-posters', {
-            activity: withForm,
-            qrCodeUrl,
-            ...selection,
-          });
-          setPosters((current) => ({ ...current, [activity.id]: generated.posters }));
-        }
-
-        const uploads = await Promise.allSettled(
-          generated.posters.map((poster, index) =>
-            sendJson('/api/drive-integration', {
-              action: 'uploadFile',
-              folderId,
-              fileName: `${slugify(activity.title)}_v${index + 1}_${poster.colorScheme}`,
-              fileContent: poster.html,
-            }),
-          ),
-        );
-
-        const uploaded = uploads.filter((result) => result.status === 'fulfilled').length;
-        const failed = uploads.length - uploaded;
-
-        patchActivity(activity.id, {
+        await sendJson('/api/drive-integration', {
+          action: 'uploadFile',
           folderId,
-          folderLink,
-          formId,
-          formLink,
-          formEditLink,
-          posterCount: uploaded,
-          posterSource: generated.mode,
+          fileName: `${slugify(activity.title)}_poster`,
+          fileContent: poster.html,
         });
 
-        if (failed > 0) {
-          push(
-            'warning',
-            `Published, but ${failed} of ${uploads.length} posters failed to upload. Try “Update Drive” again.`,
-            { link: folderLink, linkLabel: 'Open Drive folder' },
-          );
-        } else {
-          push('success', `Published “${activity.title}” — ${uploaded} posters and a registration form.`, {
-            link: folderLink,
-            linkLabel: 'Open Drive folder',
-          });
-        }
+        patchActivity(activity.id, { posterCount: (activity.posterCount ?? 0) + 1 });
+        push('success', `Published “${activity.title}” to Drive.`, {
+          link: folderLink,
+          linkLabel: 'Open Drive folder',
+        });
       } catch (err) {
         reportError(err, 'Publishing to Drive failed.');
       } finally {
         setActivityBusy(activity.id, null);
       }
     },
-    [patchActivity, posters, push, reportError, setActivityBusy, templates],
+    [ensureForm, patchActivity, posters, push, reportError, setActivityBusy],
   );
 
   /**
    * Download a poster as a file.
    *
    * A Blob URL rather than a `data:` URL: Chrome refuses to navigate to long
-   * top-level data URLs, and a full poster comfortably exceeds that limit once
-   * the QR image is embedded.
+   * top-level data URLs, and a poster with an embedded image far exceeds that.
    */
   const handleDownload = useCallback(
     (activity, index) => {
       const poster = posters[activity.id]?.[index];
       if (!poster) {
-        push('error', 'That poster is no longer available. Generate the posters again.');
+        push('error', 'That poster is no longer available. Generate it again.');
         return;
       }
 
@@ -503,7 +507,7 @@ export default function DashboardPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${slugify(activity.title)}_v${index + 1}.html`;
+      link.download = `${slugify(activity.title)}_poster.html`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -559,27 +563,13 @@ export default function DashboardPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <Link
-              href="/templates"
-              className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 font-bold text-gray-700 transition hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-            >
-              <LayoutTemplate size={20} aria-hidden="true" />
-              Templates
-              {templates.length > 0 && (
-                <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs text-white">
-                  {templates.length}
-                </span>
-              )}
-            </Link>
-            <button
-              type="button"
-              onClick={() => signOut({ callbackUrl: '/login' })}
-              className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 font-bold text-white transition hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
-            >
-              <LogOut size={20} aria-hidden="true" /> Sign out
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 font-bold text-white transition hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+          >
+            <LogOut size={20} aria-hidden="true" /> Sign out
+          </button>
         </div>
       </header>
 
@@ -595,12 +585,25 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Without this the generate button is simply absent, with nothing to say
+          why — and every reason it can be absent has a different fix. */}
+      {config && !config.imageGenAvailable && config.imageGenBlockedReason && (
+        <div className="border-b border-slate-200 bg-slate-50">
+          <p className="mx-auto flex max-w-7xl items-start gap-2 px-4 py-3 text-sm text-slate-700">
+            <Wand2 size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>
+              <strong>Poster generation is off</strong> — {config.imageGenBlockedReason}
+            </span>
+          </p>
+        </div>
+      )}
+
       <main className="mx-auto max-w-7xl px-4 py-8">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           <div className="lg:col-span-1">
             <div className="sticky top-8 rounded-lg bg-white p-6 shadow-lg">
               <h2 className="mb-6 text-2xl font-bold text-gray-800">Create activity</h2>
-              <ActivityForm onAdd={handleAdd} templates={templates} />
+              <ActivityForm onAdd={handleAdd} />
             </div>
           </div>
 
@@ -620,8 +623,9 @@ export default function DashboardPage() {
                     activity={activity}
                     posters={posters[activity.id]}
                     busy={busy[activity.id]}
-                    aiAvailable={Boolean(config?.aiPostersAvailable)}
-                    onPreview={(mode) => handlePreview(activity, mode)}
+                    progress={progress[activity.id]}
+                    imageGenAvailable={Boolean(config?.imageGenAvailable)}
+                    onGenerate={() => handleGenerate(activity)}
                     onPublish={() => handlePublish(activity)}
                     onDelete={() => handleDelete(activity)}
                     onOpenPoster={(index) => setModal({ activityId: activity.id, index })}
@@ -637,7 +641,7 @@ export default function DashboardPage() {
       {modalPoster && modalActivity && (
         <PosterModal
           poster={modalPoster}
-          label={`${modalActivity.title} — variation ${modalPoster.variationNumber}, ${modalPoster.colorScheme}`}
+          label={`${modalActivity.title} — generated poster`}
           onClose={() => setModal(null)}
           onDownload={() => handleDownload(modalActivity, modal.index)}
         />

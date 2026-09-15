@@ -1,20 +1,22 @@
 'use client';
 
 import {
+  AlertTriangle,
   Calendar,
   Clock,
   CloudUpload,
   ExternalLink,
   FolderOpen,
-  Images,
   Loader2,
   MapPin,
   Pencil,
-  Sparkles,
+  RefreshCw,
   Trash2,
+  Wand2,
 } from 'lucide-react';
 import { PosterThumbnail } from './PosterPreview';
 import { formatDateEn, formatTime } from '@/lib/format';
+import { expectedPosterText } from '@/lib/posterPrompt';
 
 function Spinner() {
   return <Loader2 size={18} className="animate-spin" aria-hidden="true" />;
@@ -24,7 +26,6 @@ function ActionButton({ onClick, disabled, busy, icon: Icon, children, tone = 'n
   const tones = {
     primary: 'bg-blue-600 hover:bg-blue-700 text-white',
     publish: 'bg-orange-600 hover:bg-orange-700 text-white',
-    ai: 'bg-purple-600 hover:bg-purple-700 text-white',
     neutral: 'bg-gray-700 hover:bg-gray-800 text-white',
   };
 
@@ -60,8 +61,9 @@ export default function ActivityCard({
   activity,
   posters,
   busy,
-  aiAvailable,
-  onPreview,
+  progress,
+  imageGenAvailable,
+  onGenerate,
   onPublish,
   onDelete,
   onOpenPoster,
@@ -69,6 +71,13 @@ export default function ActivityCard({
 }) {
   const isBusy = Boolean(busy);
   const published = Boolean(activity.folderId);
+  const hasPoster = Boolean(posters?.length);
+
+  // What the poster was asked to say. Shown beside it because the model gets
+  // the date wrong more often than it gets it right, and the only practical
+  // check is reading the two side by side.
+  const expected = expectedPosterText(activity);
+
   // Keyed by `label`, not by `value`: a location typed as "18:00" would collide
   // with the formatted time and give two rows the same React key.
   const details = [
@@ -92,7 +101,7 @@ export default function ActivityCard({
               </span>
               {activity.posterCount > 0 && (
                 <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
-                  {activity.posterCount} posters in Drive
+                  {activity.posterCount} in Drive
                 </span>
               )}
             </div>
@@ -124,42 +133,37 @@ export default function ActivityCard({
       <div className="border-b border-gray-200 bg-gray-50 p-6">
         <div className="flex flex-wrap gap-3">
           <ActionButton
-            onClick={() => onPreview('template')}
-            disabled={isBusy}
-            busy={busy === 'template'}
-            icon={Images}
+            onClick={onGenerate}
+            disabled={isBusy || !imageGenAvailable}
+            busy={busy === 'generate'}
+            icon={hasPoster ? RefreshCw : Wand2}
             tone="primary"
           >
-            {posters?.length ? 'Regenerate posters' : 'Generate posters'}
+            {hasPoster ? 'Regenerate poster' : 'Generate poster'}
           </ActionButton>
 
-          {aiAvailable && (
-            <ActionButton
-              onClick={() => onPreview('ai')}
-              disabled={isBusy}
-              busy={busy === 'ai'}
-              icon={Sparkles}
-              tone="ai"
-            >
-              AI variants
-            </ActionButton>
-          )}
-
           <ActionButton
-            onClick={() => onPublish()}
-            disabled={isBusy}
+            onClick={onPublish}
+            disabled={isBusy || !hasPoster}
             busy={busy === 'publish'}
             icon={CloudUpload}
             tone="publish"
           >
-            {published ? 'Update Drive' : 'Publish to Drive'}
+            Publish to Drive
           </ActionButton>
         </div>
 
-        {busy === 'publish' && (
+        {!published && !hasPoster && (
           <p className="mt-3 text-sm text-gray-600">
-            Creating the folder and form, then rebuilding the posters so the QR code points at
-            the form. This takes a few seconds.
+            Generating the poster also creates the Drive folder and the registration form, so the
+            QR code printed on it points at a form that already exists.
+          </p>
+        )}
+
+        {progress && (
+          <p className="mt-3 flex items-center gap-2 text-sm text-blue-800">
+            <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+            {progress}
           </p>
         )}
 
@@ -184,24 +188,46 @@ export default function ActivityCard({
         )}
       </div>
 
-      {posters?.length > 0 && (
+      {hasPoster && (
         <div className="p-6">
-          <h4 className="mb-4 font-bold text-gray-800">
-            Poster variations
-            <span className="ml-2 text-sm font-normal text-gray-500">
-              click a poster to enlarge
-            </span>
-          </h4>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-            {posters.map((poster, index) => (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div>
+              <h4 className="mb-3 font-bold text-gray-800">
+                Poster
+                <span className="ml-2 text-sm font-normal text-gray-500">click to enlarge</span>
+              </h4>
               <PosterThumbnail
-                key={`${poster.colorScheme}-${poster.variationNumber}`}
-                poster={poster}
-                label={`${activity.title} — variation ${poster.variationNumber}, ${poster.colorScheme}`}
-                onOpen={() => onOpenPoster(index)}
-                onDownload={() => onDownloadPoster(index)}
+                poster={posters[0]}
+                label={`${activity.title} — generated poster`}
+                onOpen={() => onOpenPoster(0)}
+                onDownload={() => onDownloadPoster(0)}
               />
-            ))}
+            </div>
+
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <p className="flex items-start gap-2 text-sm font-bold text-amber-900">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+                Check the poster says exactly this
+              </p>
+              <dl className="mt-3 space-y-2 text-sm">
+                {[
+                  ['Title', expected.title],
+                  ['Date', expected.date],
+                  ['Time', expected.time],
+                  ['Location', expected.location],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs uppercase tracking-wide text-amber-700">{label}</dt>
+                    <dd className="font-mono font-semibold text-amber-950">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-3 text-xs text-amber-800">
+                The image model spells the title reliably but gets dates wrong most of the time.
+                If anything differs, hit <strong>Regenerate poster</strong> — it takes about a
+                minute and produces a different design each time.
+              </p>
+            </div>
           </div>
         </div>
       )}
